@@ -5,7 +5,7 @@ import simpleGit from "simple-git";
 dotenv.config();
 
 const targetUser = process.env.TARGET_USER || 'andrade-fs'
-const cutoffDate = new Date(Date.now() - 50 * 24 * 60 * 60 * 1000); // días atrás
+const cutoffDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // días atrás
 const gitPath = process.env.GIT_PATH || undefined
 const protectedBranches = ['main', 'dev', 'master', 'version', 'origin/main', 'origin/master', 'origin/dev']; // Agrega las ramas protegidas aquí
 
@@ -46,8 +46,8 @@ const deleteOldBranches = async () => {
             
             if (branchAuthor === targetUser && !protectedBranches.includes(branch) && commitDate < cutoffDate.getTime()  && acceptDeleteBranches == '--delete') {
                 if (localBranches.all.includes(localBranch)) {
-                    console.log(`Eliminando rama local ${branch}, con fecha de ${new Date(commitDate).toLocaleDateString('es-ES')} perteneciente a ${branchAuthor}`);
-                    await git.branch(['-D', localBranch]); // Eliminar la rama local
+                     console.log(`Eliminando rama local ${branch}, con fecha de ${new Date(commitDate).toLocaleDateString('es-ES')} perteneciente a ${branchAuthor}`);
+                     await git.branch(['-D', localBranch]); // Eliminar la rama local
                 }        
                 console.log(`Eliminando rama remota ${branch}`);
                 await git.push('origin', [':' + localBranch]); // Eliminar la rama remota en origin

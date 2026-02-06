@@ -1,102 +1,174 @@
 import dotenv from 'dotenv';
 import simpleGit from 'simple-git';
 import cliProgress from 'cli-progress';
+import inquirer from 'inquirer';
 
 dotenv.config();
 
-const targetUsers = (process.env.TARGET_USERS || 'andrade-fs').split(','); // Convertir la lista de usuarios en un array
-const cutoffDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000); // días atrás
-const gitPath = process.env.GIT_PATH || undefined;
-const protectedBranches = ['main', 'dev', 'master', 'version', 'origin/main', 'origin/master', 'origin/dev']; // Agrega las ramas protegidas aquí
-console.log('cutoffDate', cutoffDate);
-const acceptDeleteBranches = process.argv[2];
-
-console.log('targetUsers:', targetUsers);
+const targetUsers = (process.env.TARGET_USERS).split(/[,|]/).map(u => u.trim());
+const cutoffDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // 30 days ago (approx 1 month)
+const gitPath = process.env.GIT_PATH || process.cwd();
+const protectedBranches = (process.env.PROTECTED_BRANCHES || 'main,dev,master,version,origin/main,origin/master,origin/dev,origin/version').split(/[,|]/).map(b => b.trim());
 
 if (!gitPath) {
     console.error('Debe especificar la ruta del repositorio.');
     throw new Error('Debe especificar la ruta del repositorio.');
 }
 
-const deleteOldBranches = async () => {
+const git = simpleGit(gitPath);
+
+const getBranches = async () => {
+    // Fetch all remote branches
+    const branches = await git.branch(['-r', '--sort=-committerdate']);
+    const branchDetails = [];
+
+    // Get merged branches to main/master
+    // We check both just in case, or we can try to detect default branch. For now assume main/master.
+    let mergedBranches = [];
     try {
-        const git = simpleGit(gitPath);
-        const branches = await git.branch(['-r', '--sort=-committerdate']); // Obtener las ramas remotas ordenadas por fecha de commit
-        const localBranches = await git.branchLocal(); // Obtener las ramas locales
+        const mergedMain = await git.raw(['branch', '-r', '--merged', 'origin/main']);
+        mergedBranches = mergedBranches.concat(mergedMain.split('\n').map(b => b.trim()).filter(Boolean));
+    } catch (e) {
+        // ignore if origin/main doesn't exist
+    }
+    try {
+        const mergedMaster = await git.raw(['branch', '-r', '--merged', 'origin/master']);
+        mergedBranches = mergedBranches.concat(mergedMaster.split('\n').map(b => b.trim()).filter(Boolean));
+    } catch (e) {
+        // ignore
+    }
 
-        const branchesToDelete = [];
-        for (const branch of branches.all) {
-            const commitDetails = await git.raw(['show', '--no-patch', '--format=%at', branch]); // Obtener la fecha del último commit de la rama
-            const commitDate = parseInt(commitDetails.trim()) * 1000; // Convertir la fecha de UNIX timestamp a milisegundos
-            const branchAuthor = (await git.raw(['show', '--no-patch', '--format=%an', branch])).trim(); // Obtener el autor del último commit de la rama
+    // De-duplicate merged branches
+    const mergedSet = new Set(mergedBranches);
 
-            if (targetUsers.includes(branchAuthor) && !protectedBranches.includes(branch) && commitDate < cutoffDate.getTime()) {
-                branchesToDelete.push(branch);
-            }
+    const bar = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic);
+    console.log('Analizando ramas...');
+    bar.start(branches.all.length, 0);
+
+    for (const branch of branches.all) {
+        // Skip HEAD
+        if (branch.includes('->')) {
+            bar.increment();
+            continue;
         }
 
-        if (acceptDeleteBranches && acceptDeleteBranches === '--delete') {
-            console.log('A continuación se eliminarán las siguientes ramas:');
+        const commitDetails = await git.raw(['show', '--no-patch', '--format=%at', branch]);
+        const commitDate = parseInt(commitDetails.trim()) * 1000;
+        const branchAuthor = (await git.raw(['show', '--no-patch', '--format=%an', branch])).trim();
+
+        branchDetails.push({
+            name: branch,
+            date: new Date(commitDate),
+            author: branchAuthor,
+            isMerged: mergedSet.has(branch)
+        });
+        bar.increment();
+    }
+    bar.stop();
+
+    return branchDetails;
+};
+
+
+const excludeUsers = (process.env.EXCLUDE_USERS || '').split(/[,|]/).map(u => u.trim()).filter(Boolean);
+
+const filterBranches = (branches, onlyMerged = false) => {
+    return branches.filter(branch => {
+        let isTargetUser;
+        if (excludeUsers.length > 0) {
+            isTargetUser = !excludeUsers.includes(branch.author);
         } else {
-            console.log('Información sobre las ramas que se eliminarán:');
+            isTargetUser = targetUsers.includes(branch.author);
         }
+
+        const isProtected = protectedBranches.some(pb => branch.name === pb || branch.name.endsWith('/' + pb));
+        const isOld = branch.date < cutoffDate;
+
+        let matches = isTargetUser && !isProtected && isOld;
+        if (onlyMerged) {
+            matches = matches && branch.isMerged;
+        }
+        return matches;
+    });
+};
+
+const main = async () => {
+    try {
+        const answers = await inquirer.prompt([
+            {
+                type: 'list',
+                name: 'mode',
+                message: '¿Qué desea hacer?',
+                choices: [
+                    { name: 'Modo Test: Listar ramas a eliminar', value: 'test' },
+                    { name: 'Modo Acción: Eliminar ramas', value: 'delete' }
+                ]
+            },
+            {
+                type: 'list',
+                name: 'filter',
+                message: '¿Qué ramas desea incluir?',
+                choices: [
+                    { name: 'Todas las ramas antiguas (cualquier estado)', value: 'all' },
+                    { name: 'Solo ramas mergeadas (ya integradas)', value: 'merged' }
+                ]
+            }
+        ]);
+
+        const allBranches = await getBranches();
+        const branchesToDelete = filterBranches(allBranches, answers.filter === 'merged');
+
+        console.log('\n');
+        if (branchesToDelete.length === 0) {
+            console.log('No se encontraron ramas que cumplan los criterios.');
+            return;
+        }
+
         console.info('-----------------------------------------------------------------------');
+        if (answers.mode === 'test') {
+            console.log('Ramas candidatas a eliminar:');
+            branchesToDelete.forEach(b => {
+                console.log(`- ${b.name} (${b.date.toLocaleDateString()}) - Autor: ${b.author} [Merged: ${b.isMerged ? 'YES' : 'NO'}]`);
+            });
+            console.info('-----------------------------------------------------------------------');
+            console.log(`Total: ${branchesToDelete.length} ramas.`);
+        } else {
+            console.log(`Se encontraron ${branchesToDelete.length} ramas para eliminar.`);
+            const confirm = await inquirer.prompt([
+                {
+                    type: 'confirm',
+                    name: 'proceed',
+                    message: 'ESTA ACCIÓN ES DESTRUCTIVA. ¿Está seguro de que desea eliminar estas ramas remotas?',
+                    default: false
+                }
+            ]);
 
-        if (acceptDeleteBranches === '--delete') {
-            const bar = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic);
-            bar.start(branchesToDelete.length, 0);
-        }
+            if (confirm.proceed) {
+                const bar = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic);
+                bar.start(branchesToDelete.length, 0);
 
-        let processedBranches = 0;
-        for (const branch of branchesToDelete) {
-            const commitDetails = await git.raw(['show', '--no-patch', '--format=%at', branch]);
-            const commitDate = parseInt(commitDetails.trim()) * 1000;
-            const branchAuthor = (await git.raw(['show', '--no-patch', '--format=%an', branch])).trim();
-            const localBranch = branch.replace('origin/', '');
-
-            if (acceptDeleteBranches !== '--delete') {
-                console.log(`La rama ${branch}, con fecha de ${new Date(commitDate).toLocaleDateString('es-ES')} perteneciente a ${branchAuthor}`);
+                let processed = 0;
+                for (const branch of branchesToDelete) {
+                    const localBranch = branch.name.replace('origin/', '');
+                    try {
+                        // Delete remote
+                        await git.push('origin', [':' + localBranch]);
+                        processed++;
+                    } catch (err) {
+                        console.error(`\nError eliminando ${branch.name}:`, err.message);
+                    }
+                    bar.update(processed);
+                }
+                bar.stop();
+                console.log('\nProceso finalizado.');
             } else {
-                // if (localBranches.all.includes(localBranch)) {
-                //     console.log(`Eliminando rama local ${branch}, con fecha de ${new Date(commitDate).toLocaleDateString('es-ES')} perteneciente a ${branchAuthor}`);
-                //     await git.branch(['-D', localBranch]); // Eliminar la rama local
-                // }
-                console.log(`Eliminando rama remota ${branch}`);
-                await git.push('origin', [':' + localBranch]); // Eliminar la rama remota en origin
-                processedBranches++;
-                bar.update(processedBranches);
+                console.log('Operación cancelada.');
             }
         }
 
-        bar.stop();
-
-        if (acceptDeleteBranches !== '--delete') {
-            console.info('-----------------------------------------------------------------------');
-            console.log('Esto ha sido solo informativo. Si quieres eliminarlas de verdad, ejecuta:');
-            console.info('$ node index.js --delete');
-        }
     } catch (error) {
-        console.error('ERROR - ', error);
+        console.error('Error:', error);
     }
 };
 
-if (acceptDeleteBranches && acceptDeleteBranches === '--delete') {
-    console.log('Dispone de 11 segundos para cancelar la acción');
-    const cancelTimeout = setTimeout(() => {
-        deleteOldBranches();
-    }, 11000);
-
-    process.stdin.on('data', (data) => {
-        const input = data.toString().trim().toLowerCase();
-
-        if (input === '') {
-            clearTimeout(cancelTimeout);
-            console.log('Operación cancelada por el usuario.');
-            process.exit(0);
-        }
-    });
-
-    console.log('Presione "Enter" para cancelar la operación...');
-} else {
-    deleteOldBranches();
-}
+main();

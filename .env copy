@@ -1,2 +1,17 @@
-TARGET_USER=$GIT_user
-GIT_PATH=$LOCAL_PROJECT_PATH
+# Lista de usuarios cuyos commits serán considerados para eliminar ramas.
+# Separar por comas (,) o barras verticales (|) si hay múltiples usuarios.
+# Ejemplo: TARGET_USERS=jdoe|asmith,otro_user
+TARGET_USERS=andrade-fs
+
+# Opcional: Lista de usuarios a EXCLUIR. Si se define, se borrarán ramas de TODOS los usuarios
+# MENOS los que estén en esta lista.
+# Ejemplo: EXCLUDE_USERS=boss|admin
+EXCLUDE_USERS=
+# Ruta absoluta al repositorio local de Git que deseas limpiar.
+# Si no se define, se usará el directorio actual donde se ejecuta el script.
+# Ejemplo: GIT_PATH=/Users/jdoe/proyectos/mi-repo
+GIT_PATH=/Users/saf/Documents/Councilbox/OVAC/councilbox-server
+
+# Lista de ramas protegidas que NUNCA serán eliminadas.
+# Separar por comas (,) o barras verticales (|).
+PROTECTED_BRANCHES=main,dev,master,version,origin/main,origin/master,origin/dev,origin/version

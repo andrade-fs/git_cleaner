@@ -1,20 +1,52 @@
 {
-  "name": "git_cleaner",
-  "version": "1.0.0",
-  "description": "Script to delete all branches, filered by date and user owner",
-  "main": "index.js",
+  "name": "bitpry",
+  "version": "0.2.0",
+  "description": "Policy-driven git hygiene CLI: find stale branches, prove why, delete them safely and undo. Shapes the branch tree instead of guessing — plus secret/leak policy scanning.",
+  "type": "module",
+  "bin": {
+    "topiary": "bin/topiary.js",
+    "bitpry": "bin/topiary.js",
+    "git-cleaner": "bin/topiary.js",
+    "gcl": "bin/topiary.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "schema.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "start": "node bin/topiary.js",
+    "test": "node scripts/test.js",
+    "prepublishOnly": "npm test"
+  },
+  "keywords": [
+    "git",
+    "branches",
+    "cleanup",
+    "prune",
+    "stale-branches",
+    "topiary",
+    "secrets",
+    "leaks",
+    "cli",
+    "tui"
+  ],
   "author": "andrade-fs <sandradeferreiro@gmail.com>",
   "license": "MIT",
-  "type": "module",
-  "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andrade-fs/git_cleaner.git"
   },
-  "dependencies": {
-    "cli-progress": "^3.12.0",
-    "dotenv": "^16.3.1",
-    "inquirer": "^9.2.15",
-    "nodemon": "^2.0.22",
-    "simple-git": "^3.19.0"
+  "bugs": {
+    "url": "https://github.com/andrade-fs/git_cleaner/issues"
+  },
+  "homepage": "https://github.com/andrade-fs/git_cleaner#readme",
+  "publishConfig": {
+    "access": "public"
   }
 }

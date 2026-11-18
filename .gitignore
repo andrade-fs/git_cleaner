@@ -1,2 +1,10 @@
 node_modules/
 .env
+*.tgz
+.git-cleaner/
+.DS_Store
+
+# Local scratch: terminal dumps and post drafts, never published.
+history.txt
+blog-data.md
+IDEA.md

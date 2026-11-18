@@ -1,0 +1,281 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/andrade-fs/git_cleaner/main/schema.json",
+  "title": "Topiary configuration",
+  "description": "Policy for Topiary (topiary / bitpry). Layers: defaults → ~/.config/topiary/config.json → .git-cleaner.json → .git-cleaner.local.json → .env (legacy) → GIT_CLEANER_* → CLI flags.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "extends": {
+      "type": "string",
+      "description": "Path to another config file this one extends (relative to this file)."
+    },
+    "remote": {
+      "type": "string",
+      "default": "origin",
+      "description": "Remote to inspect and delete from."
+    },
+    "defaultBranch": {
+      "type": "string",
+      "default": "auto",
+      "description": "\"auto\" resolves origin/HEAD, then main, master, develop, trunk."
+    },
+    "includeLocal": {
+      "type": "boolean",
+      "default": false,
+      "description": "Also consider local branches."
+    },
+    "fetch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true, "description": "Run git fetch --prune before analysing." },
+        "prune": { "type": "boolean", "default": true }
+      }
+    },
+    "protect": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Vetoes. A protected branch is never a candidate, in any mode.",
+      "properties": {
+        "branches": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["main", "master", "dev", "develop", "version/*", "release/*", "staging", "prod", "trunk"],
+          "description": "Glob patterns: * matches inside a segment, ** across segments."
+        },
+        "patterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["^release/", "^version/"],
+          "description": "Regular expressions matched against the branch name."
+        },
+        "users": {
+          "type": "array",
+          "description": "Authors whose branches are never deleted. Use { email } (glob allowed), { name } (glob or /regex/flags) and an optional reason shown in the plan.",
+          "items": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "email": { "type": "string", "description": "Exact email or glob, e.g. *@company.com" },
+                  "name": { "type": "string", "description": "Author name glob, or /regex/flags" },
+                  "reason": { "type": "string" }
+                }
+              }
+            ]
+          }
+        },
+        "openMR": {
+          "type": "boolean",
+          "default": true,
+          "description": "Treat branches with an open pull request as protected (needs the gh CLI on GitHub remotes)."
+        }
+      }
+    },
+    "targets": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Who is in scope.",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["mine", "allowlist", "denylist", "all"],
+          "default": "mine",
+          "description": "mine = your git user.email; allowlist = targets.users; denylist = everyone except targets.users; all = everyone."
+        },
+        "users": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Emails (or *glob*) used by allowlist/denylist."
+        },
+        "exclude": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Authors that are never in scope. Beats the allowlist."
+        },
+        "aliases": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Display name → canonical email, for the users command report."
+        }
+      }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minAgeDays": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 3650,
+          "default": 30,
+          "description": "Minimum branch age, measured on the tip commit."
+        },
+        "dateField": {
+          "type": "string",
+          "enum": ["committerdate", "authordate"],
+          "default": "committerdate"
+        },
+        "merged": {
+          "type": "string",
+          "enum": ["any", "only", "exclude"],
+          "default": "any",
+          "description": "only = candidates must be merged into the default branch; exclude = skip merged ones."
+        },
+        "maxAhead": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "default": null,
+          "description": "Skip branches holding more than N commits that are not in the default branch."
+        },
+        "detectSquashMerged": {
+          "type": "boolean",
+          "default": false,
+          "description": "Reserved: patch-id based squash-merge detection."
+        }
+      }
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "backup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Write refs/gitcleaner/<id>/<branch> before deleting so restore works."
+        },
+        "requireConfirm": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ask before deleting. --yes skips it; without a TTY, --yes is mandatory."
+        },
+        "protectUnmerged": {
+          "type": "boolean",
+          "default": true,
+          "description": "Unmerged branches need --allow-unmerged to become candidates."
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "format": { "type": "string", "enum": ["table", "json", "md"], "default": "table" },
+        "color": { "type": "string", "enum": ["auto", "always", "never"], "default": "auto" },
+        "locale": { "type": "string", "enum": ["en", "es"], "default": "en" }
+      }
+    },
+    "leaks": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Secret and sensitive-file hygiene.",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "paths": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "deny": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Files that must never be tracked. Globs match the path and the basename."
+            },
+            "allow": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Exceptions, e.g. .env.example or *.pub. Wins over deny."
+            }
+          }
+        },
+        "junk": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Generated files that should not be tracked (.DS_Store, dist/**, ...)."
+        },
+        "trackedIgnored": { "type": "boolean", "default": true },
+        "gitignoreGaps": {
+          "type": "boolean",
+          "default": true,
+          "description": "Report sensitive files that are on disk, untracked and not ignored."
+        },
+        "engine": {
+          "type": "string",
+          "enum": ["auto", "builtin", "gitleaks", "none"],
+          "default": "auto",
+          "description": "auto uses gitleaks when it is on PATH, and always runs the built-in policy layer."
+        },
+        "requireEngine": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, leaks --check fails (exit 3) if the configured secret engine is not installed. Use it in CI so a missing gitleaks cannot pass as clean."
+        },
+        "rules": {
+          "type": "array",
+          "description": "Team-defined patterns: regex + optional entropy + path filters. Scanned over tracked files.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "pattern"],
+            "properties": {
+              "id": { "type": "string", "description": "Finding identifier shown in reports." },
+              "description": { "type": "string" },
+              "pattern": { "type": "string", "description": "JavaScript regular expression, e.g. acme_[A-Za-z0-9]{32}" },
+              "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"], "default": "high" },
+              "entropy": { "type": "number", "description": "Minimum Shannon entropy (bits/char) of the match, e.g. 3.5." },
+              "paths": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "include": { "type": "array", "items": { "type": "string" } },
+                  "exclude": { "type": "array", "items": { "type": "string" } }
+                }
+              },
+              "fixable": { "type": "boolean", "default": false }
+            }
+          }
+        },
+        "sast": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Delegated static analysis (opengrep/semgrep). Off by default: it needs your own rule file.",
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "engine": { "type": "string", "enum": ["opengrep", "semgrep"], "default": "opengrep" },
+            "config": {
+              "type": ["string", "null"],
+              "default": null,
+              "description": "Rule file, relative to the repo. Defaults to .opengrep.yml / .semgrep.yml when present."
+            },
+            "timeout": { "type": "number", "minimum": 1000, "default": 300000 }
+          }
+        },
+        "history": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "depth": { "type": ["number", "null"], "minimum": 1, "default": 500 }
+          }
+        },
+        "redact": { "type": "string", "enum": ["always"], "default": "always" },
+        "baseline": {
+          "type": "string",
+          "default": ".git-cleaner/leaks-baseline.json",
+          "description": "Accepted findings, with justification and expiry."
+        },
+        "failOn": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "critical"],
+          "default": "high",
+          "description": "Threshold for --check (exit code 3)."
+        }
+      }
+    }
+  }
+}
